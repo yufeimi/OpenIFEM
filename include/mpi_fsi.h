@@ -69,6 +69,20 @@ namespace MPI
      */
     void update_indicator();
 
+    /*! \brief Update the FSI mapping between solid and fluid.
+     *
+     *  For energy convervation purpose, the same shape functions should be
+     * used for both interpolation (fluid to solid) and distribution
+     * (solid to fluid) process. In this member function, a solid node is
+     * mapped with a fluid cell. The information on fluid nodes (vel, acc) are
+     * interpolated onto solid nodes, then the FE integration is performed on
+     * solid nodes to compute the integrated FSI force. After the integrated
+     * FSI force is computed, it is distributed onto the nodes of the
+     * surrounding fluid cell, and directly added onto the RHS to avoid
+     * double-counted integration.
+     */
+    void update_distributors();
+
     /// Move solid triangulation either forward or backward using
     /// displacements,
     void move_solid_mesh(bool);
@@ -107,6 +121,8 @@ namespace MPI
     /// Mesh adaption.
     void refine_mesh(const unsigned int, const unsigned int);
 
+    struct DistributorStorage;
+
     // For MPI FSI, the solid solver uses shared trianulation. i.e.,
     // each process has the entire graph, for the ease of looping.
     Fluid::MPI::FluidSolver<dim> &fluid_solver;
@@ -130,6 +146,10 @@ namespace MPI
     // searching.
     std::vector<bool> vertices_mask;
 
+    // A vector for solid vertices that stores the fluid cells that surrounds
+    // them and the corresponding shape functions for each dof.
+    std::vector<std::unique_ptr<DistributorStorage>> distributor_storage;
+
     // Cell storage that stores hints of cell searching from last time step.
     CellDataStorage<
       typename parallel::distributed::Triangulation<dim>::active_cell_iterator,
@@ -137,6 +157,19 @@ namespace MPI
       cell_hints;
 
     bool use_dirichlet_bc;
+
+    struct DistributorStorage
+    {
+      // Methods
+      DistributorStorage(typename DoFHandler<dim>::active_cell_iterator f_cell,
+                         MappingQGeneric<dim> mapping)
+        : f_cell(f_cell), mapping(mapping){};
+      void compute_shape_values(FESystem<dim> &, Point<dim> p);
+      // Attributes
+      typename DoFHandler<dim>::active_cell_iterator f_cell;
+      MappingQGeneric<dim> mapping;
+      std::list<std::pair<unsigned, double>> shape_value;
+    };
   };
 } // namespace MPI
 

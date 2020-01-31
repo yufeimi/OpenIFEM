@@ -312,16 +312,22 @@ namespace MPI
         dummy_fe_values.reinit(scalar_f_cell);
         scalar_f_cell->get_dof_indices(scalar_dof_indices);
         auto support_points = dummy_fe_values.get_quadrature_points();
+        bool artificial_fluid_cell = false;
         for (unsigned int i = 0; i < unit_points.size(); ++i)
           {
-            auto scalar_line = scalar_dof_indices[i];
-            if (!point_in_solid(solid_solver.dof_handler, support_points[i]))
+            if (point_in_solid(solid_solver.dof_handler, support_points[i]))
               {
-                continue;
+                artificial_fluid_cell = true;
+                break;
               }
-            indicator_constraint.add_line(scalar_line);
-            indicator_constraint.set_inhomogeneity(scalar_line, 1);
           }
+        if (artificial_fluid_cell)
+          for (unsigned int i = 0; i < unit_points.size(); ++i)
+            {
+              auto scalar_line = scalar_dof_indices[i];
+              indicator_constraint.add_line(scalar_line);
+              indicator_constraint.set_inhomogeneity(scalar_line, 1);
+            }
       }
     indicator_constraint.close();
     PETScWrappers::MPI::Vector tmp;
@@ -329,6 +335,52 @@ namespace MPI
                fluid_solver.mpi_communicator);
     indicator_constraint.distribute(tmp);
     fluid_solver.indicator = tmp;
+    move_solid_mesh(false);
+  }
+
+  // Loop over the fluid cells, and find solid cells with their vertices inside
+  // this fluid cell.
+  template <int dim>
+  void FSI<dim>::update_distributors()
+  {
+    move_solid_mesh(true);
+    AssertThrow(parameters.solid_degree == 1, ExcNotImplemented());
+    std::vector<int> vertices_used(solid_solver.triangulation.n_vertices(), 0);
+    distributor_storage.clear();
+    distributor_storage.resize(solid_solver.triangulation.n_used_vertices());
+    std::list<typename DoFHandler<dim>::active_cell_iterator> in_solid_f_cells;
+    // Pre-filter in-solid fluid cells
+    for (auto f_cell : fluid_solver.dof_handler.active_cell_iterators())
+      {
+        if (!f_cell->is_locally_owned())
+          continue;
+        for (unsigned v = 0; v < GeometryInfo<dim>::vertices_per_cell; ++v)
+          {
+            if (point_in_solid(solid_solver.dof_handler, f_cell->vertex(v)))
+              {
+                in_solid_f_cells.push_back(f_cell);
+                break;
+              }
+          }
+      }
+    // Find surrounding fluid cells for each solid vertex
+    for (auto s_vertex = solid_solver.triangulation.begin_active_vertex();
+         s_vertex != solid_solver.triangulation.end_vertex();
+         ++s_vertex)
+      {
+        for (auto f_cell : in_solid_f_cells)
+          {
+            if (f_cell->point_inside(s_vertex->vertex(0)))
+              {
+                distributor_storage[s_vertex->index()] =
+                  std::make_unique<DistributorStorage>(
+                    f_cell,
+                    MappingQGeneric<dim>(parameters.fluid_velocity_degree));
+                distributor_storage[s_vertex->index()]->compute_shape_values(
+                  fluid_solver.fe, s_vertex->vertex(0));
+              }
+          }
+      }
     move_solid_mesh(false);
   }
 
@@ -754,6 +806,7 @@ namespace MPI
       }
 
     collect_solid_boundaries();
+    update_solid_box();
     setup_cell_hints();
     update_vertices_mask();
 
@@ -774,6 +827,7 @@ namespace MPI
       }
     while (time.end() - time.current() > 1e-12)
       {
+        update_distributors();
         find_solid_bc();
         if (success_load)
           {
@@ -810,6 +864,18 @@ namespace MPI
             solid_solver.save_checkpoint(time.get_timestep());
             fluid_solver.save_checkpoint(time.get_timestep());
           }
+      }
+  }
+
+  template <int dim>
+  void FSI<dim>::DistributorStorage::compute_shape_values(FESystem<dim> &fe,
+                                                          Point<dim> p)
+  {
+    auto unit_p = mapping.transform_real_to_unit_cell(f_cell, p);
+    for (unsigned i = 0; i < fe.dofs_per_cell; ++i)
+      {
+        this->shape_value.push_back(
+          std::make_pair(i, fe.shape_value(i, unit_p)));
       }
   }
 
