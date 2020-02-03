@@ -485,8 +485,7 @@ namespace MPI
                 for (unsigned j = 0; j < dim; ++j)
                   { // Inner loop on DoFs
                     local_distributed_force[itr->first] =
-                      parameters.fluid_rho * itr->second *
-                      localized_solid_fsi_force[i + j];
+                      itr->second * localized_solid_fsi_force[i + j];
                     ++itr;
                   }
                 // Skip the pressure dof

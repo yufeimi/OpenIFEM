@@ -247,7 +247,7 @@ namespace Solid
                 {
                   // Compute the fsi force
                   local_fsi_force(i) +=
-                    phi[i] *
+                    phi[i] * parameters.solid_rho *
                     ((solid_velocity_values[q] - fluid_velocity_values[q]) /
                      dt) *
                     fe_values.JxW(q);
