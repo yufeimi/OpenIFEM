@@ -201,7 +201,6 @@ namespace Fluid
       std::vector<double> current_pressure_values(n_q_points);
       std::vector<Tensor<1, dim>> present_velocity_values(n_q_points);
       std::vector<double> ind(n_q_points);
-      std::vector<Tensor<1, dim>> fsi_acc_values(n_q_points);
 
       std::vector<double> div_phi_u(dofs_per_cell);
       std::vector<Tensor<1, dim>> phi_u(dofs_per_cell);
@@ -237,9 +236,6 @@ namespace Fluid
                 present_solution, present_velocity_values);
 
               scalar_fe_values.get_function_values(indicator, ind);
-
-              fe_values[velocities].get_function_values(fsi_acceleration,
-                                                        fsi_acc_values);
 
               // Assemble the system matrix and mass matrix simultaneouly.
               // The mass matrix only uses the (0, 0) and (1, 1) blocks.
@@ -307,8 +303,7 @@ namespace Fluid
                       if (ind[q] > 0)
                         {
                           local_rhs(i) +=
-                            (scalar_product(grad_phi_u[i], p[0]->fsi_stress) +
-                             (fsi_acc_values[q] * rho * phi_u[i])) *
+                            (scalar_product(grad_phi_u[i], p[0]->fsi_stress)) *
                             fe_values.JxW(q);
                         }
                     }
@@ -367,6 +362,10 @@ namespace Fluid
 
       system_matrix.compress(VectorOperation::add);
       mass_matrix.compress(VectorOperation::add);
+      system_rhs.compress(VectorOperation::add);
+
+      // Add fsi force to system_rhs
+      system_rhs += fsi_acceleration;
       system_rhs.compress(VectorOperation::add);
     }
 
