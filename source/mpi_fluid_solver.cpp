@@ -366,7 +366,10 @@ namespace Fluid
             PETScWrappers::MPI::Vector(locally_owned_scalar_dofs,
                                        locally_relevant_scalar_dofs,
                                        mpi_communicator)));
+      PETScWrappers::MPI::BlockVector tmp_fsi_acceleration(
+        owned_partitioning, relevant_partitioning, mpi_communicator);
       tmp_stress = stress;
+      tmp_fsi_acceleration = fsi_acceleration;
 
       std::vector<DataComponentInterpretation::DataComponentInterpretation>
         data_component_interpretation(
@@ -380,7 +383,7 @@ namespace Fluid
                                solution_names,
                                DataOut<dim>::type_dof_data,
                                data_component_interpretation);
-      data_out.add_data_vector(fsi_acceleration,
+      data_out.add_data_vector(tmp_fsi_acceleration,
                                fsi_force_names,
                                DataOut<dim>::type_dof_data,
                                data_component_interpretation);

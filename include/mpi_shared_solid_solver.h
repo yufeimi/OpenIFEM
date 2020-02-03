@@ -129,6 +129,11 @@ namespace Solid
             const PETScWrappers::MPI::Vector &);
 
       /**
+       * Assemble FSI force on solid for distribution.
+       */
+      void assemble_fsi_force();
+
+      /**
        * Output the time-dependent solution in vtu format.
        */
       void output_results(const unsigned int);
@@ -174,6 +179,8 @@ namespace Solid
       PETScWrappers::MPI::SparseMatrix
         stiffness_matrix; //!< The stiffness is used in the rhs.
       PETScWrappers::MPI::Vector system_rhs;
+      PETScWrappers::MPI::Vector
+        fsi_force; //!< Will be distributed to fluid in FSI
 
       /**
        * In the Newmark-beta method, acceleration is the variable to solve at
@@ -188,6 +195,7 @@ namespace Solid
       PETScWrappers::MPI::Vector previous_acceleration;
       PETScWrappers::MPI::Vector previous_velocity;
       PETScWrappers::MPI::Vector previous_displacement;
+      PETScWrappers::MPI::Vector fluid_velocity;
 
       /**
        * Nodal strain and stress obtained by taking the average of surrounding

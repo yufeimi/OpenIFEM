@@ -150,6 +150,8 @@ namespace MPI
     // them and the corresponding shape functions for each dof.
     std::vector<std::unique_ptr<DistributorStorage>> distributor_storage;
 
+    std::vector<Point<dim>> solid_support_points;
+
     // Cell storage that stores hints of cell searching from last time step.
     CellDataStorage<
       typename parallel::distributed::Triangulation<dim>::active_cell_iterator,
@@ -164,7 +166,7 @@ namespace MPI
       DistributorStorage(typename DoFHandler<dim>::active_cell_iterator f_cell,
                          MappingQGeneric<dim> mapping)
         : f_cell(f_cell), mapping(mapping){};
-      void compute_shape_values(FESystem<dim> &, Point<dim> p);
+      void compute_shape_values(FESystem<dim> &, const Point<dim> &);
       // Attributes
       typename DoFHandler<dim>::active_cell_iterator f_cell;
       MappingQGeneric<dim> mapping;

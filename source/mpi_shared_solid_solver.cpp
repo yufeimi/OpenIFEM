@@ -129,6 +129,8 @@ namespace Solid
 
       system_rhs.reinit(locally_owned_dofs, mpi_communicator);
 
+      fsi_force.reinit(locally_owned_dofs, mpi_communicator);
+
       current_acceleration.reinit(locally_owned_dofs, mpi_communicator);
 
       current_velocity.reinit(locally_owned_dofs, mpi_communicator);
@@ -140,6 +142,8 @@ namespace Solid
       previous_velocity.reinit(locally_owned_dofs, mpi_communicator);
 
       previous_displacement.reinit(locally_owned_dofs, mpi_communicator);
+
+      fluid_velocity.reinit(locally_owned_dofs, mpi_communicator);
 
       strain = std::vector<std::vector<PETScWrappers::MPI::Vector>>(
         spacedim,
@@ -184,6 +188,77 @@ namespace Solid
       x = localized_x;
 
       return {solver_control.last_step(), solver_control.last_value()};
+    }
+
+    template <int dim, int spacedim>
+    void SharedSolidSolver<dim, spacedim>::assemble_fsi_force()
+    {
+      AffineConstraints<double> dummy_constraints;
+      dummy_constraints.clear();
+      DoFTools::make_hanging_node_constraints(dof_handler, dummy_constraints);
+      dummy_constraints.close();
+
+      const double dt = time.get_delta_t();
+      fsi_force = 0;
+
+      FEValues<dim, spacedim> fe_values(fe,
+                                        volume_quad_formula,
+                                        update_values | update_gradients |
+                                          update_quadrature_points |
+                                          update_JxW_values);
+      const unsigned int dofs_per_cell = fe.dofs_per_cell;
+      const unsigned int n_q_points = volume_quad_formula.size();
+
+      Vector<double> local_fsi_force(dofs_per_cell);
+
+      std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+
+      // The shape functions at a certain point.
+      std::vector<Tensor<1, spacedim>> phi(dofs_per_cell);
+      // A "viewer" to describe the nodal dofs as a vector.
+      FEValuesExtractors::Vector velocities(0);
+
+      Vector<double> localized_fluid_velocity(fluid_velocity);
+      Vector<double> localized_solid_velocity(current_velocity);
+
+      std::vector<Tensor<1, spacedim>> fluid_velocity_values(n_q_points);
+      std::vector<Tensor<1, spacedim>> solid_velocity_values(n_q_points);
+
+      // Loop over cells
+      for (auto &cell : dof_handler.active_cell_iterators())
+        {
+          local_fsi_force = 0;
+
+          fe_values.reinit(cell);
+
+          fe_values[velocities].get_function_values(localized_fluid_velocity,
+                                                    fluid_velocity_values);
+          fe_values[velocities].get_function_values(localized_solid_velocity,
+                                                    solid_velocity_values);
+          // Loop over quadrature points
+          for (unsigned int q = 0; q < n_q_points; ++q)
+            {
+              // Loop over the dofs once to calculate phi
+              for (unsigned int k = 0; k < dofs_per_cell; ++k)
+                {
+                  phi[k] = fe_values[velocities].value(k, q);
+                }
+              for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                {
+                  // Compute the fsi force
+                  local_fsi_force(i) +=
+                    phi[i] *
+                    ((solid_velocity_values[q] - fluid_velocity_values[q]) /
+                     dt) *
+                    fe_values.JxW(q);
+                }
+            }
+          cell->get_dof_indices(local_dof_indices);
+          dummy_constraints.distribute_local_to_global(
+            local_fsi_force, local_dof_indices, fsi_force);
+        }
+      // Synchronize with other processors.
+      fsi_force.compress(VectorOperation::add);
     }
 
     template <int dim, int spacedim>
