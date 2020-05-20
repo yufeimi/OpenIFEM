@@ -69,7 +69,9 @@ namespace MPI
 {
   template <int dim>
   class FSI;
-}
+  template <int dim>
+  class ControlVolumeFSI;
+} // namespace MPI
 
 namespace Fluid
 {
@@ -84,6 +86,7 @@ namespace Fluid
     public:
       //! FSI solver need access to the private members of this solver.
       friend ::MPI::FSI<dim>;
+      friend ::MPI::ControlVolumeFSI<dim>;
 
       //! Constructor.
       FluidSolver(parallel::distributed::Triangulation<dim> &,

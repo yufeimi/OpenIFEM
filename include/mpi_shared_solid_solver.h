@@ -68,7 +68,9 @@ namespace MPI
 {
   template <int dim>
   class FSI;
-}
+  template <int dim>
+  class ControlVolumeFSI;
+} // namespace MPI
 
 namespace Solid
 {
@@ -83,6 +85,7 @@ namespace Solid
     public:
       //! FSI solver need access to the private members of this solver.
       friend ::MPI::FSI<spacedim>;
+      friend ::MPI::ControlVolumeFSI<spacedim>;
 
       SharedSolidSolver(Triangulation<dim, spacedim> &,
                         const Parameters::AllParameters &);
