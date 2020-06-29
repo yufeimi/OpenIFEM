@@ -142,7 +142,7 @@ namespace MPI
                                           Solid::MPI::SharedSolidSolver<dim> &s,
                                           const Parameters::AllParameters &p,
                                           bool use_dirichlet_bc)
-    : FSI<dim>(f, s, p, use_dirichlet_bc)
+    : FSI<dim>(f, s, p, use_dirichlet_bc), projected_fe(parameters.solid_degree)
   {
   }
 
@@ -430,6 +430,63 @@ namespace MPI
               unit_cut_points, cutter[0]->quad_formula.get_weights());
           }
       }
+  }
+
+  template <int dim>
+  void ControlVolumeFSI<dim>::construct_solid_surface_projection()
+  {
+    // Well, only works in 2D right now...
+    AssertThrow(dim == 2, ExcNotImplemented());
+    // Must be called after MPI::FSI::collect_solid_boundararies
+    AssertThrow(
+      !solid_boundaries.empty(),
+      ExcMessage("Solid boundaries not collected when creating projection!"));
+    // An extra set is allocated because we don't want duplicated vertices
+    std::map<unsigned int, unsigned int> vertex_set;
+    std::vector<Point<dim - 1>> vertex_vector;
+    std::vector<CellData<dim - 1>> connectivity;
+    // Iterate over the solid boundary face iterators
+    for (auto &face : solid_boundaries)
+      {
+        // Skip the faces on the bottom
+        double sum_vertex_ycoord = 0.0;
+        for (unsigned v = 0; v < GeometryInfo<dim>::vertices_per_face; ++v)
+          {
+            sum_vertex_ycoord += std::abs(face->vertex(v)(1));
+          }
+        if (sum_vertex_ycoord > 1e-7)
+          continue;
+
+        // Collect the vertices
+        unsigned int vertex_number = 0;
+        for (unsigned v = 0; v < GeometryInfo<dim>::vertices_per_face; ++v)
+          {
+            if (vertex_set.find(face->vertex_index(v)) == vertex_set.end())
+              {
+                Point<dim - 1> vertex_to_insert;
+                for (unsigned d = 0; d < dim; ++d)
+                  {
+                    if (d != 1)
+                      {
+                        vertex_to_insert(d) = face->vertex(v)(d);
+                      }
+                  }
+                vertex_set.insert({face->vertex_index(v), vertex_number++});
+                vertex_vector.push_back(vertex_to_insert);
+              }
+          }
+        // Store the cell connectivity
+        CellData<dim - 1> cell_data;
+        for (unsigned v = 0; v < GeometryInfo<dim>::vertices_per_face; ++v)
+          {
+            auto index = vertex_set.find(face->vertex_index(v))->second;
+            cell_data.vertices[v] = index;
+          }
+        connectivity.push_back(cell_data);
+      }
+    solid_surface_projection.create_triangulation(
+      vertex_vector, connectivity, SubCellData());
+    projected_velocity.initialize(solid_surface_projection, projected_fe);
   }
 
   template <int dim>
