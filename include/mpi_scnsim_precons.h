@@ -4,22 +4,27 @@
 #include "mpi_fluid_solver.h"
 #include "preconditioner_pilut.h"
 
+namespace BlockPreconditionerHelper
+{
+  enum PvvPreconditionType
+  {
+    ilu = 0,
+    block_jacobi,
+    none
+  };
+}
+
+using PvvType = BlockPreconditionerHelper::PvvPreconditionType;
+
 class BlockPreconditioner : public Subscriptor
 {
 public:
-  enum inner_type
-  {
-    none = 0,
-    block_jacobi,
-    mumps
-  };
   /// Constructor.
   BlockPreconditioner(TimerOutput &timer2,
                       const std::vector<IndexSet> &owned_partitioning,
                       const PETScWrappers::MPI::BlockSparseMatrix &system,
-                      PETScWrappers::MPI::SparseMatrix &absA,
                       PETScWrappers::MPI::SparseMatrix &schur,
-                      PETScWrappers::MPI::SparseMatrix &B2pp);
+                      BlockPreconditionerHelper::PvvPreconditionType pvv_type);
 
   /// The matrix-vector multiplication must be defined.
   void vmult(PETScWrappers::MPI::BlockVector &dst,
@@ -54,14 +59,16 @@ private:
   /// dealii smart pointer checks if an object is still being referenced
   /// when it is destructed therefore is safer than plain reference.
   const SmartPointer<const PETScWrappers::MPI::BlockSparseMatrix> system_matrix;
-  const SmartPointer<PETScWrappers::MPI::SparseMatrix> Abs_A_matrix;
   const SmartPointer<PETScWrappers::MPI::SparseMatrix> schur_matrix;
-  const SmartPointer<PETScWrappers::MPI::SparseMatrix> B2pp_matrix;
 
-  PreconditionEuclid Pvv_inverse;
-  PreconditionEuclid B2pp_inverse;
+  PETScWrappers::PreconditionBlockJacobi Pvv_inverse_blockJacobi;
+  PreconditionEuclid Pvv_inverse_ilu;
+  PETScWrappers::PreconditionBlockJacobi Tpp_inverse;
+
+  BlockPreconditionerHelper::PvvPreconditionType pvv_type;
 
   std::shared_ptr<SchurComplementTpp> Tpp;
+
   // iteration counter for solving Tpp
   mutable int Tpp_itr;
   class SchurComplementTpp : public Subscriptor
@@ -76,6 +83,7 @@ private:
 
   private:
     TimerOutput &timer2;
+    BlockPreconditionerHelper::PvvPreconditionType inner_type;
     const SmartPointer<const PETScWrappers::MPI::BlockSparseMatrix>
       system_matrix;
     const PETScWrappers::PreconditionerBase *Pvv_inverse;

@@ -1,4 +1,5 @@
 #include "mpi_scnsim.h"
+#include "mpi_scnsim_precons.h"
 
 namespace Fluid
 {
@@ -719,9 +720,26 @@ namespace Fluid
     std::pair<unsigned int, double>
     SCnsIM<dim>::solve(const bool use_nonzero_constraints)
     {
+      auto solver_internal =
+        [&](std::function<void(SolverFGMRES<PETScWrappers::MPI::BlockVector> &)>
+              solving) mutable {
+          SolverControl solver_control(
+            system_matrix.m(), 1e-6 * system_rhs.l2_norm(), true);
+
+          // Because PETScWrappers::SolverGMRES requires preconditioner derived
+          // from PETScWrappers::PreconditionBase, we use dealii SolverFGMRES.
+          GrowingVectorMemory<PETScWrappers::MPI::BlockVector> vector_memory;
+          SolverFGMRES<PETScWrappers::MPI::BlockVector> gmres(solver_control,
+                                                              vector_memory);
+
+          // The solution vector must be non-ghosted
+          solving(gmres);
+          return solver_control;
+        };
       // This section includes the work done in the preconditioner
       // and GMRES solver.
-      TimerOutput::Scope timer_section(timer, "Solve linear system");
+      pcout << "Start regular solving..." << std::endl;
+      timer.enter_subsection("Solver linear system");
       preconditioner.reset(
         new BlockIncompSchurPreconditioner(timer2,
                                            owned_partitioning,
@@ -729,18 +747,71 @@ namespace Fluid
                                            Abs_A_matrix,
                                            schur_matrix,
                                            B2pp_matrix));
+      auto normal_solving =
+        [&](SolverFGMRES<PETScWrappers::MPI::BlockVector> &solver) mutable {
+          solver.solve(
+            system_matrix, newton_update, system_rhs, *preconditioner);
+        };
+      SolverControl solver_control(solver_internal(normal_solving));
+      timer.leave_subsection("Solver linear system");
 
-      SolverControl solver_control(
-        system_matrix.m(), 1e-6 * system_rhs.l2_norm(), true);
+      // Test no inner preconditioner
+      pcout << "Start inner ILU no precon solving..." << std::endl;
+      timer.enter_subsection("Solver with no inner precon, ILU for Pvv");
+      std::shared_ptr<BlockPreconditioner> preconditioner_no_inner_ilu =
+        std::make_shared<BlockPreconditioner>(timer2,
+                                              owned_partitioning,
+                                              system_matrix,
+                                              schur_matrix,
+                                              PvvType::ilu);
+      auto no_inner_solving =
+        [&](SolverFGMRES<PETScWrappers::MPI::BlockVector> &solver) mutable {
+          solver.solve(system_matrix,
+                       newton_update,
+                       system_rhs,
+                       *preconditioner_no_inner_ilu);
+        };
+      newton_update = 0;
+      SolverControl solver_control_1(solver_internal(no_inner_solving));
+      timer.leave_subsection("Solver with no inner precon, ILU for Pvv");
 
-      // Because PETScWrappers::SolverGMRES requires preconditioner derived
-      // from PETScWrappers::PreconditionBase, we use dealii SolverFGMRES.
-      GrowingVectorMemory<PETScWrappers::MPI::BlockVector> vector_memory;
-      SolverFGMRES<PETScWrappers::MPI::BlockVector> gmres(solver_control,
-                                                          vector_memory);
+      // Test no block jacobi pvv preconditioner
+      pcout << "Start inner BJ no precon solving..." << std::endl;
+      timer.enter_subsection("Solver with no inner precon, BJ for Pvv");
+      std::shared_ptr<BlockPreconditioner> preconditioner_no_inner_bj =
+        std::make_shared<BlockPreconditioner>(timer2,
+                                              owned_partitioning,
+                                              system_matrix,
+                                              schur_matrix,
+                                              PvvType::block_jacobi);
+      auto no_inner_solving_bj =
+        [&](SolverFGMRES<PETScWrappers::MPI::BlockVector> &solver) mutable {
+          solver.solve(system_matrix,
+                       newton_update,
+                       system_rhs,
+                       *preconditioner_no_inner_bj);
+        };
+      newton_update = 0;
+      SolverControl solver_control_2(solver_internal(no_inner_solving_bj));
+      timer.leave_subsection("Solver with no inner precon, BJ for Pvv");
 
-      // The solution vector must be non-ghosted
-      gmres.solve(system_matrix, newton_update, system_rhs, *preconditioner);
+      // Test no preconditioner
+      pcout << "Start inner no precon solving..." << std::endl;
+      timer.enter_subsection("Solver with no preconditioner");
+      std::shared_ptr<BlockPreconditioner> no_preconditioner =
+        std::make_shared<BlockPreconditioner>(timer2,
+                                              owned_partitioning,
+                                              system_matrix,
+                                              schur_matrix,
+                                              PvvType::none);
+      auto no_precon =
+        [&](SolverFGMRES<PETScWrappers::MPI::BlockVector> &solver) mutable {
+          solver.solve(
+            system_matrix, newton_update, system_rhs, *no_preconditioner);
+        };
+      newton_update = 0;
+      SolverControl solver_control_3(solver_internal(no_precon));
+      timer.leave_subsection("Solver with no preconditioner");
 
       const AffineConstraints<double> &constraints_used =
         use_nonzero_constraints ? nonzero_constraints : zero_constraints;
