@@ -49,21 +49,10 @@ namespace MPI
     struct CVValues;
     struct SurfaceCutter;
 
-    /*! \brief Collect the fluid cells that are in the control volume.
-     */
     void collect_control_volume_cells();
-    /*! \brief Collect the fluid cells that contain the CV boundaries.
-     */
     void collect_inlet_outlet_cells();
-    /*! \brief Construct the projection of the solid to the bottom
-     *  This created triangulation is used to compute relative velocity. Note:
-     * the bottom is by default 0, and it cannot be used on solids that has
-     * multiple part / is concave.
-     */
-    void construct_solid_surface_projection();
     void control_volume_analysis();
     void compute_relative_velocity();
-    void update_solid_surface_velocity();
     void get_separation_point();
     void compute_efflux();
     void compute_volume_integral();
@@ -81,24 +70,14 @@ namespace MPI
       cv_f_cells;
     std::set<typename DoFHandler<dim>::active_cell_iterator> inlet_cells;
     std::set<typename DoFHandler<dim>::active_cell_iterator> outlet_cells;
-    /* The triangulation created from the solid surface projected to the bottom.
-     * This is used for the computation of relative velocity and separation
-     * point.
-     */
-    Triangulation<dim - 1> solid_surface_projection;
-    DoFHandler<dim - 1> projected_velocity;
-    FE_Q<dim - 1> projected_fe;
     CellDataStorage<
       typename parallel::distributed::Triangulation<dim>::active_cell_iterator,
       Tensor<1, dim>>
       solid_surface_velocity;
-
-    // Surface cutters for the inlet/outlet fluid cells.
     CellDataStorage<
       typename parallel::distributed::Triangulation<dim>::active_cell_iterator,
       SurfaceCutter>
       surface_cutters;
-    // Struct that stores the on-the-fly control volume analysis results.
     CVValues cv_values;
 
     struct CVValues
