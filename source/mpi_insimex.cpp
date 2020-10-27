@@ -126,9 +126,8 @@ namespace Fluid
 
     template <int dim>
     InsIMEX<dim>::InsIMEX(parallel::distributed::Triangulation<dim> &tria,
-                          const Parameters::AllParameters &parameters,
-                          std::shared_ptr<Function<dim>> bc)
-      : FluidSolver<dim>(tria, parameters, bc)
+                          const Parameters::AllParameters &parameters)
+      : FluidSolver<dim>(tria, parameters)
     {
       Assert(
         parameters.fluid_velocity_degree - parameters.fluid_pressure_degree ==
@@ -144,7 +143,7 @@ namespace Fluid
       preconditioner.reset();
       // newton_update is non-ghosted because the linear solver needs
       // a completely distributed vector.
-      solution_increment.reinit(owned_partitioning, mpi_communicator);
+      solution_time_increment.reinit(owned_partitioning, mpi_communicator);
     }
 
     template <int dim>
@@ -384,11 +383,11 @@ namespace Fluid
 
       // The solution vector must be non-ghosted
       gmres.solve(
-        system_matrix, solution_increment, system_rhs, *preconditioner);
+        system_matrix, solution_time_increment, system_rhs, *preconditioner);
 
       const AffineConstraints<double> &constraints_used =
         use_nonzero_constraints ? nonzero_constraints : zero_constraints;
-      constraints_used.distribute(solution_increment);
+      constraints_used.distribute(solution_time_increment);
 
       return {solver_control.last_step(), solver_control.last_value()};
     }
@@ -411,7 +410,7 @@ namespace Fluid
             << ", at t = " << std::scientific << time.current() << std::endl;
 
       // Resetting
-      solution_increment = 0;
+      solution_time_increment = 0;
       assemble(apply_nonzero_constraints,
                assemble_system || (parameters.simulation_type == "Fluid" &&
                                    time.time_to_refine()));
@@ -421,7 +420,7 @@ namespace Fluid
       PETScWrappers::MPI::BlockVector tmp;
       tmp.reinit(owned_partitioning, mpi_communicator);
       tmp = present_solution;
-      tmp += solution_increment;
+      tmp += solution_time_increment;
       present_solution = tmp;
 
       pcout << std::scientific << std::left << " GMRES_ITR = " << std::setw(3)

@@ -1,17 +1,16 @@
 /**
- * This program tests serial Slightly Compressible solver with a PML
- * absorbing boundary condition.
+ * This program tests serial Slightly Compressible solver with an
+ * acoustic wave in 2D duct case.
  * A Gaussian pulse is used as the time dependent BC with max velocity
  * equal to 6cm/s.
- * The PML boundary condition (1cm long) is applied to the right boundary.
- * This test takes about 400s.
+ * This test takes about 770s.
  */
-#include "mpi_scnsim.h"
+#include "mpi_scnsex.h"
 #include "parameters.h"
 #include "utilities.h"
 
-extern template class Fluid::MPI::SCnsIM<2>;
-extern template class Fluid::MPI::SCnsIM<3>;
+extern template class Fluid::MPI::SCnsEX<2>;
+extern template class Fluid::MPI::SCnsEX<3>;
 
 using namespace dealii;
 
@@ -30,54 +29,38 @@ int main(int argc, char *argv[])
         }
       Parameters::AllParameters params(infile);
 
-      double L = 1.4, H = 0.4;
-      double PMLlength = 1.2, SigmaMax = 340000;
-
-      auto sigma_pml_field =
-        [PMLlength, SigmaMax](const Point<2> &p, const unsigned int component) {
-          (void)component;
-          double SigmaPML = 0.0;
-          double boundary = 1.4;
-          // For tube acoustics
-          if (p[0] > boundary - PMLlength)
-            {
-              // A quadratic increasing function from boundary-PMLlength to the
-              // boundary
-              SigmaPML =
-                SigmaMax * pow((p[0] + PMLlength - boundary) / PMLlength, 4);
-            }
-          return SigmaPML;
-        };
+      double L = 4, H = 1;
 
       auto gaussian_pulse = [dt =
                                params.time_step](const Point<2> &p,
                                                  const unsigned int component,
                                                  const double time) -> double {
         auto time_value = [](double t) {
-          return 6.0 * exp(-0.5 * pow((t - 0.5e-6) / 0.15e-6, 2));
+          return 6.0 * exp(-0.5 * pow((t - 0.5e-4) / 0.15e-4, 2));
         };
 
         if (component == 0 && std::abs(p[0]) < 1e-10)
-          return time_value(time) - time_value(time - dt);
+          return time_value(time);
 
-        return 0.0;
+        return 0;
       };
 
       if (params.dimension == 2)
         {
           parallel::distributed::Triangulation<2> tria(MPI_COMM_WORLD);
           dealii::GridGenerator::subdivided_hyper_rectangle(
-            tria, {7, 2}, Point<2>(0, 0), Point<2>(L, H), true);
-          Fluid::MPI::SCnsIM<2> flow(tria, params);
+            tria, {8, 2}, Point<2>(0, 0), Point<2>(L, H), true);
+          Fluid::MPI::SCnsEX<2> flow(tria, params);
           flow.add_hard_coded_boundary_condition(0, gaussian_pulse);
-          flow.set_sigma_pml_field(sigma_pml_field);
+          flow.set_hard_coded_boundary_condition_time(0, 1.1e-4);
           flow.run();
+          // After the computation the max velocity should be ~
+          // the peak of the Gaussian pulse (with dispersion).
           auto solution = flow.get_current_solution();
-          // The wave is absorbed at last, so the solution should be zero.
           auto v = solution.block(0);
           double vmax = v.max();
-          double verror = std::abs(vmax);
-          AssertThrow(verror < 5e-2,
+          double verror = std::abs(vmax - 5.97) / 5.97;
+          AssertThrow(verror < 1e-3,
                       ExcMessage("Maximum velocity is incorrect!"));
         }
       else

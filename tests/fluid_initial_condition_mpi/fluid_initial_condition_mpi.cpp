@@ -1,9 +1,9 @@
 /**
- * This program tests serial Slightly Compressible solver with an
- * acoustic wave in 2D duct case.
- * A Gaussian pulse is used as the time dependent BC with max velocity
- * equal to 6cm/s.
- * This test takes about 770s.
+ * This program tests parallel NavierStokes solver with a 2D flow around
+ * cylinder
+ * case.
+ * Hard-coded parabolic velocity input is used, and Re = 20.
+ * Only one step is run, and the test takes about 33s.
  */
 #include "mpi_scnsim.h"
 #include "parameters.h"
@@ -16,8 +16,6 @@ using namespace dealii;
 
 int main(int argc, char *argv[])
 {
-  using namespace dealii;
-
   try
     {
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
@@ -29,43 +27,41 @@ int main(int argc, char *argv[])
         }
       Parameters::AllParameters params(infile);
 
-      double L = 4, H = 1;
-
-      auto gaussian_pulse = [dt =
-                               params.time_step](const Point<2> &p,
-                                                 const unsigned int component,
-                                                 const double time) -> double {
-        auto time_value = [](double t) {
-          return 6.0 * exp(-0.5 * pow((t - 0.5e-4) / 0.15e-4, 2));
-        };
-
-        if (component == 0 && std::abs(p[0]) < 1e-10)
-          return time_value(time) - time_value(time - dt);
-
-        return 0;
-      };
-
       if (params.dimension == 2)
         {
+          auto initial_condition = [](const Point<2> &point,
+                                      const unsigned int component) -> double {
+            double pressure = 1e4;
+            if (component == 2)
+              {
+                if (point[0] > 4.0 && point[0] < 5.0)
+                  {
+                    return pressure * (point[0] - 4.0);
+                  }
+                else if (point[0] >= 5.0 && point[0] < 12.0)
+                  {
+                    return pressure;
+                  }
+              }
+            return 0.0;
+          };
           parallel::distributed::Triangulation<2> tria(MPI_COMM_WORLD);
-          dealii::GridGenerator::subdivided_hyper_rectangle(
-            tria, {8, 2}, Point<2>(0, 0), Point<2>(L, H), true);
-
+          GridGenerator::subdivided_hyper_rectangle(
+            tria, {150, 20}, Point<2>(0, 0), Point<2>(15, 2), true);
           Fluid::MPI::SCnsIM<2> flow(tria, params);
-          flow.add_hard_coded_boundary_condition(0, gaussian_pulse);
+          flow.set_initial_condition(initial_condition);
           flow.run();
-          // After the computation the max velocity should be ~
-          // the peak of the Gaussian pulse (with dispersion).
+          // Check the max values of pressure
           auto solution = flow.get_current_solution();
-          auto v = solution.block(0);
-          double vmax = v.max();
-          double verror = std::abs(vmax - 5.91) / 5.91;
-          AssertThrow(verror < 1e-3,
-                      ExcMessage("Maximum velocity is incorrect!"));
+          auto p = solution.block(1);
+          double pmax = p.max();
+          double perror = std::abs(pmax - 1e4) / 1e4;
+          AssertThrow(perror < 1e-8,
+                      ExcMessage("Maximum pressure is incorrect!"));
         }
       else
         {
-          AssertThrow(false, ExcNotImplemented());
+          AssertThrow(false, ExcMessage("This test should be run in 2D!"));
         }
     }
   catch (std::exception &exc)

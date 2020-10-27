@@ -8,31 +8,31 @@
 # Simulation parameters
 subsection Simulation
   # Type of simulation: FSI/Fluid/Solid
-  set Simulation type = FSI
+  set Simulation type =  Fluid
 
   # The dimension of the simulation
   set Dimension = 2
 
   # Level of global refinement before running,
   # which applies to all the solvers
-  set Global refinements = 1, 1
+  set Global refinements = 3, 0
 
   # The end time of the simulation in second
-  set End time = 1e0
+  set End time = 1e-4
 
   # The time step in second
-  set Time step size = 1e-2
+  set Time step size = 1e-7
 
   # The output interval in second
-  set Output interval = 1e-2
+  set Output interval = 1e-5
 
   # Mesh refinement interval in second
-  set Refinement interval = 10
+  set Refinement interval = 10000
 
   # Checkpoint save interval in second
   set Save interval = 1e-1
 
-  # Body force which applies to solid only (acceleration)
+  # Body force which applies to both fluid and solid (acceleration)
   set Gravity = 0.0, 0.0
 end
 
@@ -41,17 +41,16 @@ end
 subsection Fluid finite element system
   # The degree of pressure element
   set Pressure degree = 1
-
   # The degree of velocity element. For grad-div solver this must be one higher than pressure
-  set Velocity degree = 2
+  set Velocity degree = 1
 end
 
 subsection Fluid material properties
   # The dynamic viscosity
-  set Dynamic viscosity = 0.001
+  set Dynamic viscosity = 1.8e-4
 
   # Fluid density
-  set Fluid density = 1
+  set Fluid density = 1.3e-3
 end
 
 subsection Fluid solver control
@@ -76,17 +75,17 @@ subsection Fluid Dirichlet BCs
   set Number of Dirichlet BCs = 4
 
   # List all the boundaries with Dirichlet BCs
-  set Dirichlet boundary id = 0, 2, 3, 4
+  set Dirichlet boundary id = 0, 1, 2, 3
 
   # List the constrained components of these boundaries
   # One decimal number indicates one set of constrained components:
   # 1-x, 2-y, 3-xy, 4-z, 5-xz, 6-yz, 7-xyz
   # To make sense of the numbering, convert decimals to binaries (zyx)
-  set Dirichlet boundary components = 3, 3, 3, 3
+  set Dirichlet boundary components = 1, 1, 2, 2
 
   # Specify the values of the Dirichlet BCs, including both homogeneous and
   # inhomogeneous ones.
-  set Dirichlet boundary values = 0.2, 0, 0, 0, 0, 0, 0, 0
+  set Dirichlet boundary values = 6, 0, 0, 0
 end
 
 subsection Fluid Neumann BCs
@@ -115,21 +114,17 @@ subsection Solid material properties
   # Solid density, used by all solid solvers
   set Solid density = 1
 
-  # E, nu and eta are only used by linearElasticMaterial
+  # E and nu are only used by linearElasticMaterial
   set Young's modulus = 2.5
 
   set Poisson's ratio = 0.25
-
-  set Viscosity = 0.0
 
   # A list of parameters used by hyperelasticMaterial
   set Hyperelastic parameters = 0.5, 1.67
 end
 
 subsection Solid solver control
-  # Artifitial damping. 
-  # -alpha for HHT-alpha time integraion (In MPI::SharedLinearLeasticity). 0 < -alpha < 0.3.
-  # For other solid solvers, this is the value added to 0.5 for gamma.
+  # Artifitial damping.
   set Damping = 0.0
 
   # Number of Newton-Raphson iterations allowed, used by hyperelastic solver only
@@ -140,9 +135,6 @@ subsection Solid solver control
 
   # Force residual tolerance (relative to the first iteration at each timestep)
   set Force tolerance  = 1.0e-6
-
-  # Contact force multiplier (only used in FSI)
-  set Contact force multiplier = 1.0e8
 end
 
 # Only homogeneous Dirichlet BC is supported, i.e., the prescribed value is always 0.

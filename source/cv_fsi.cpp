@@ -220,6 +220,14 @@ namespace MPI
         {
           TimerOutput::Scope timer_section(timer, "Run solid solver");
           solid_solver.run_one_step(first_step);
+          if (penetration_criterion)
+            {
+              apply_contact_model(first_step);
+            }
+          else
+            {
+              solid_solver.run_one_step(first_step);
+            }
         }
         update_solid_box();
         update_indicator();
