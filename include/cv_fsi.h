@@ -85,7 +85,8 @@ namespace MPI
 
     struct CVValues
     {
-      void initialize_output(MPI_Comm &mpi_communicator);
+      void initialize_output(const Utils::Time &time,
+                             MPI_Comm &mpi_communicator);
       void reset();
       Point<dim> separation_point;
       double inlet_volume_flow;
